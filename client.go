@@ -11,11 +11,10 @@ import (
 	"github.com/go-bamboo/pkg/log"
 	"github.com/go-bamboo/pkg/uuid"
 	"github.com/gorilla/websocket"
+	"github.com/tidwall/gjson"
 )
 
-type Service interface {
-	Unmarshal(data []byte) (interface{}, error)
-}
+type UnpackFn func(data []byte) error
 
 // Client 单个 websocket 信息
 type Client struct {
@@ -31,7 +30,7 @@ type Client struct {
 	ctx       context.Context
 	ctxCancel context.CancelFunc
 	wg        sync.WaitGroup
-	unpack    map[int64]Service
+	unpack    map[int64]UnpackFn
 }
 
 func New(opts ...Option) *Client {
@@ -48,13 +47,14 @@ func New(opts ...Option) *Client {
 		message:   make(chan []byte, 256),
 		ctx:       cCtx,
 		ctxCancel: cCancel,
-		unpack:    map[int64]Service{},
+		unpack:    map[int64]UnpackFn{},
 	}
 }
 
-func (c *Client) Send(data []byte, id int64, callback Service) {
+func (c *Client) Send(data []byte, id int64, callback UnpackFn) error {
 	c.unpack[id] = callback
 	c.message <- data
+	return nil
 }
 
 func (c *Client) Subscribe(ch interface{}) event.Subscription {
@@ -154,13 +154,13 @@ func (c *Client) read() {
 				continue
 			}
 			// c.log.Infof("client [%s] receive message: %s", c.Id, string(message))
-			ret, err := c.UnpackTrade(message)
-			if err != nil {
-				log.Errorf("err = %v", err)
-				time.Sleep(1 * time.Second)
-				continue
+			localNo := gjson.GetBytes(message, "localNo")
+			fn, ok := c.unpack[localNo.Int()]
+			if ok {
+				if err := fn(message); err != nil {
+					log.Error(err)
+				}
 			}
-			c.feed.Send(ret)
 		}
 	}
 }

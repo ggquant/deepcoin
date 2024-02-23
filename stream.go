@@ -45,9 +45,5 @@ func (s *Stream) Spot() *Stream {
 }
 
 func (s *Stream) Client() *Client {
-	return &Client{
-		apiKey:    s.apiKey,
-		secretKey: s.secretKey,
-		baseURL:   s.url,
-	}
+	return New(APIKey(s.apiKey), SecretKey(s.secretKey), BaseURL(s.url))
 }
