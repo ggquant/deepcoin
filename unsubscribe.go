@@ -29,12 +29,12 @@ func (sub *UnsubscribeService) Subscribe(x string) {
 
 func (sub *UnsubscribeService) Do(ctx context.Context, ID uint) error {
 	sub.req.Method = "UNSUBSCRIBE"
-	sub.C.RpcId = sub.C.RpcId + 1
+	sub.C.rpcId = sub.C.rpcId + 1
 	data, err := json.Marshal(sub.req)
 	if err != nil {
 		return err
 	}
-	sub.C.Send(data, sub.C.RpcId, sub)
+	sub.C.Send(data, sub.C.rpcId, sub)
 	return nil
 }
 

@@ -1,10 +1,53 @@
 package deepcoin
 
-func NewBinanceStream(apiKey, secretKey string, streams []string) *Client {
-	url := "wss://stream.binance.com:9443/stream?streams="
-	for _, stream := range streams {
-		url = url + stream + "/"
+import "net/url"
+
+type Stream struct {
+	apiKey    string
+	secretKey string
+	url       string
+}
+
+func NewStream(apiKey, secretKey string) *Stream {
+	url := "wss://stream.deepcoin.com"
+	return &Stream{
+		apiKey:    apiKey,
+		secretKey: secretKey,
+		url:       url,
 	}
-	url = url[:len(url)-1]
-	return New(APIKey(apiKey), SecretKey(secretKey), BaseURL(url))
+}
+
+func (s *Stream) Public() *Stream {
+	u, _ := url.JoinPath(s.url, "public")
+	return &Stream{
+		apiKey:    s.apiKey,
+		secretKey: s.secretKey,
+		url:       u,
+	}
+}
+
+func (s *Stream) Swap() *Stream {
+	u, _ := url.JoinPath(s.url, "ws")
+	return &Stream{
+		apiKey:    s.apiKey,
+		secretKey: s.secretKey,
+		url:       u,
+	}
+}
+
+func (s *Stream) Spot() *Stream {
+	u, _ := url.JoinPath(s.url, "spotws")
+	return &Stream{
+		apiKey:    s.apiKey,
+		secretKey: s.secretKey,
+		url:       u,
+	}
+}
+
+func (s *Stream) Client() *Client {
+	return &Client{
+		apiKey:    s.apiKey,
+		secretKey: s.secretKey,
+		baseURL:   s.url,
+	}
 }

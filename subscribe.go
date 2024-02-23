@@ -30,7 +30,7 @@ func (s *SubscribeService) Subscribe(channel string) {
 
 func (s *SubscribeService) Do(ctx context.Context, ID uint) error {
 	s.req.Method = "SUBSCRIBE"
-	rpcId := atomic.AddInt64(&s.C.RpcId, 1)
+	rpcId := atomic.AddInt64(&s.C.rpcId, 1)
 	s.req.ID = rpcId
 	data, err := json.Marshal(s.req)
 	if err != nil {

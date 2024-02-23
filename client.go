@@ -19,11 +19,11 @@ type Service interface {
 
 // Client 单个 websocket 信息
 type Client struct {
-	APIKey    string
-	SecretKey string
-	BaseURL   string
-	Id        string
-	RpcId     int64
+	apiKey    string
+	secretKey string
+	baseURL   string
+	id        string
+	rpcId     int64
 	conn      *websocket.Conn
 	lock      sync.RWMutex
 	message   chan []byte // 订阅数据
@@ -41,10 +41,10 @@ func New(opts ...Option) *Client {
 	}
 	cCtx, cCancel := context.WithCancel(context.TODO())
 	return &Client{
-		APIKey:    defaultOpts.apiKey,
-		SecretKey: defaultOpts.secretKey,
-		BaseURL:   defaultOpts.baseURL,
-		Id:        uuid.New(),
+		apiKey:    defaultOpts.apiKey,
+		secretKey: defaultOpts.secretKey,
+		baseURL:   defaultOpts.baseURL,
+		id:        uuid.New(),
 		message:   make(chan []byte, 256),
 		ctx:       cCtx,
 		ctxCancel: cCancel,
@@ -74,7 +74,7 @@ func (c *Client) Stop() error {
 	c.wg.Wait()
 	if c.conn != nil {
 		if err := c.conn.Close(); err != nil {
-			log.Errorf("client [%s] disconnect err: %s", c.Id, err)
+			log.Errorf("client [%s] disconnect err: %s", c.id, err)
 			return err
 		}
 	}
@@ -100,7 +100,7 @@ func (c *Client) watchConn() {
 			// try conn
 			c.lock.Lock()
 			if c.conn == nil {
-				conn, _, err := websocket.DefaultDialer.Dial(c.BaseURL, nil)
+				conn, _, err := websocket.DefaultDialer.Dial(c.baseURL, nil)
 				if err != nil {
 					log.Errorf("err = %v", err)
 					c.lock.Unlock()
@@ -194,7 +194,7 @@ func (c *Client) write() {
 				c.lock.RUnlock()
 				return
 			}
-			log.Infof("client [%s] write message: %s", c.Id, string(message))
+			log.Infof("client [%s] write message: %s", c.id, string(message))
 			c.lock.RLock()
 			if c.conn == nil {
 				time.Sleep(1 * time.Second)
@@ -204,7 +204,7 @@ func (c *Client) write() {
 			err := c.conn.WriteMessage(websocket.TextMessage, message)
 			c.lock.RUnlock()
 			if err != nil {
-				log.Errorf("client [%s] write message err: %s", c.Id, err)
+				log.Errorf("client [%s] write message err: %s", c.id, err)
 			}
 		}
 	}
