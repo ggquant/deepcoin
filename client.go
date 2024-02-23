@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ethereum/go-ethereum/event"
 	"github.com/go-bamboo/pkg/log"
 	"github.com/go-bamboo/pkg/uuid"
 	"github.com/gorilla/websocket"
@@ -23,23 +22,20 @@ type Client struct {
 	baseURL   string
 	id        string
 	rpcId     int64
-	conn      *websocket.Conn
-	lock      sync.RWMutex
 	message   chan []byte // 订阅数据
-	feed      event.Feed
 	ctx       context.Context
 	ctxCancel context.CancelFunc
 	wg        sync.WaitGroup
 	unpack    map[int64]UnpackFn
 }
 
-func New(opts ...Option) *Client {
+func New(opts ...Option) (*Client, error) {
 	defaultOpts := options{}
 	for _, o := range opts {
 		o(&defaultOpts)
 	}
 	cCtx, cCancel := context.WithCancel(context.TODO())
-	return &Client{
+	c := &Client{
 		apiKey:    defaultOpts.apiKey,
 		secretKey: defaultOpts.secretKey,
 		baseURL:   defaultOpts.baseURL,
@@ -49,6 +45,10 @@ func New(opts ...Option) *Client {
 		ctxCancel: cCancel,
 		unpack:    map[int64]UnpackFn{},
 	}
+	if err := c.dial(); err != nil {
+		return nil, err
+	}
+	return c, nil
 }
 
 func (c *Client) Send(data []byte, id int64, callback UnpackFn) error {
@@ -57,27 +57,9 @@ func (c *Client) Send(data []byte, id int64, callback UnpackFn) error {
 	return nil
 }
 
-func (c *Client) Subscribe(ch interface{}) event.Subscription {
-	return c.feed.Subscribe(ch)
-}
-
-func (c *Client) Start() error {
-	c.wg.Add(3)
-	go c.watchConn()
-	go c.read()
-	go c.write()
-	return nil
-}
-
-func (c *Client) Stop() error {
+func (c *Client) Close() error {
 	c.ctxCancel()
 	c.wg.Wait()
-	if c.conn != nil {
-		if err := c.conn.Close(); err != nil {
-			log.Errorf("client [%s] disconnect err: %s", c.id, err)
-			return err
-		}
-	}
 	return nil
 }
 
@@ -97,29 +79,24 @@ func (c *Client) watchConn() {
 		case <-c.ctx.Done():
 			return
 		default:
-			// try conn
-			c.lock.Lock()
-			if c.conn == nil {
-				conn, _, err := websocket.DefaultDialer.Dial(c.baseURL, nil)
-				if err != nil {
-					log.Errorf("err = %v", err)
-					c.lock.Unlock()
-					time.Sleep(1 * time.Second)
-					continue
-				} else {
-					c.conn = conn
-					c.lock.Unlock()
-				}
-			} else {
-				c.lock.Unlock()
-			}
-
 		}
 	}
 }
 
+func (c *Client) dial() error {
+	conn, _, err := websocket.DefaultDialer.Dial(c.baseURL, nil)
+	if err != nil {
+		log.Errorf("err = %v", err)
+		return err
+	}
+	c.wg.Add(2)
+	go c.read(conn)
+	go c.write(conn)
+	return nil
+}
+
 // 读信息，从 websocket 连接直接读取数据
-func (c *Client) read() {
+func (c *Client) read(conn *websocket.Conn) {
 	defer func() {
 		c.wg.Done()
 		if err := recover(); err != nil {
@@ -130,26 +107,19 @@ func (c *Client) read() {
 			log.Errorf("%s", pl)
 		}
 	}()
+	conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 	for {
 		select {
 		case <-c.ctx.Done():
 			return
 		default:
-			c.lock.RLock()
-			if c.conn == nil {
-				time.Sleep(1 * time.Second)
-				continue
-			}
-			c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
-			messageType, message, err := c.conn.ReadMessage()
-			c.lock.RUnlock()
+			messageType, message, err := conn.ReadMessage()
 			if err != nil {
 				log.Errorf("err = %v", err)
 				time.Sleep(1 * time.Second)
 				continue
 			}
 			if messageType == websocket.CloseMessage {
-				c.conn = nil
 				time.Sleep(1 * time.Second)
 				continue
 			}
@@ -166,7 +136,7 @@ func (c *Client) read() {
 }
 
 // 写信息，从 channel 变量 Send 中读取数据写入 websocket 连接
-func (c *Client) write() {
+func (c *Client) write(conn *websocket.Conn) {
 	defer func() {
 		c.wg.Done()
 		if err := recover(); err != nil {
@@ -177,32 +147,17 @@ func (c *Client) write() {
 			log.Errorf("%s", pl)
 		}
 	}()
+	conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 	for {
 		select {
 		case <-c.ctx.Done():
 			return
 		case message, ok := <-c.message:
 			if !ok {
-				c.lock.RLock()
-				if c.conn == nil {
-					c.lock.RUnlock()
-					return
-				}
-				if err := c.conn.WriteMessage(websocket.CloseMessage, []byte{}); err != nil {
-					log.Errorf("err = %v", err)
-				}
-				c.lock.RUnlock()
 				return
 			}
 			log.Infof("client [%s] write message: %s", c.id, string(message))
-			c.lock.RLock()
-			if c.conn == nil {
-				time.Sleep(1 * time.Second)
-				continue
-			}
-			c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-			err := c.conn.WriteMessage(websocket.TextMessage, message)
-			c.lock.RUnlock()
+			err := conn.WriteMessage(websocket.TextMessage, message)
 			if err != nil {
 				log.Errorf("client [%s] write message err: %s", c.id, err)
 			}

@@ -44,6 +44,6 @@ func (s *Stream) Spot() *Stream {
 	}
 }
 
-func (s *Stream) Client() *Client {
+func (s *Stream) Client() (*Client, error) {
 	return New(APIKey(s.apiKey), SecretKey(s.secretKey), BaseURL(s.url))
 }
